@@ -9,7 +9,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
-@CrossOrigin(origins = "http://localhost:4200")
+@CrossOrigin(origins = "https://test-synonym.herokuapp.com")
 @RequestMapping("api/synonym")
 public class SynonymController {
     private SynonymService _service; // DI
