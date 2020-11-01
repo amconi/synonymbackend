@@ -22,6 +22,11 @@ public class ResponseSearchDTO {
     public ResponseSearchDTO() {
     }
 
+    public ResponseSearchDTO(Boolean isError, String errorMessage) {
+        this.isError = isError;
+        this.errorMessage = errorMessage;
+    }
+
     public List<WordDTO> getWordDTO() {
         return wordDTO;
     }

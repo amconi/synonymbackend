@@ -12,9 +12,11 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
-import java.util.Collection;
-import java.util.List;
-import java.util.Optional;
+
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Function;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
 @Service
@@ -36,6 +38,10 @@ public class SynonymService {
     public ResponseSearchDTO getSearchHome(SearchDTO search) {
         ResponseSearchDTO ret = new ResponseSearchDTO();
         if (!search.getSearchTerm().chars().allMatch(Character::isLetter)) { // only chars is allowed
+            return new ResponseSearchDTO(true, "Only letters are allowed without space!");// and if is not all chars return empty object
+        }
+
+        if (search.getSearchTerm() == "") { // is empty search
             return ret;// and if is not all chars return empty object
         }
 
@@ -43,21 +49,31 @@ public class SynonymService {
         List<Word> searchRes = _repository.findWordsAndSynonyms(search.getSearchTerm());// search for word or synonyms
         List<WordDTO> searchResDTO = searchRes.stream().map(this::convertWordToWordDTO).collect(Collectors.toList()); // map
 
+        List<SynonymDTO> synAdded = new ArrayList<>();
         if(search.getIncludeTransitive()){ // transitive rule
             searchResDTO.forEach((WordDTO w) -> {
-                List<String> selectedSynonym = w.getSynonyms().stream().map(entry -> entry.getSynonymText().toLowerCase()).collect(Collectors.toList()); // get returned synonyms
-                List<Word> children = _repository.findWithTransitiveRule(selectedSynonym);
-                List<SynonymDTO> synToAdd = children.stream().map(entry -> entry.getSynonyms()).flatMap(Collection::stream).collect(Collectors.toList())
-                        .stream().map(entry -> new SynonymDTO(entry.getSynonymId(), entry.getSynonymText())).collect(Collectors.toList()); // get synonyms to add and map to DTO
+                List<String> firstSelectedSynonyms = w.getSynonyms().stream().map(entry -> entry.getSynonymText().toLowerCase()).collect(Collectors.toList()); // get returned synonyms
+                getChildren(firstSelectedSynonyms,synAdded);
 
                 List<SynonymDTO> oldToAdd = w.getSynonyms();
-                oldToAdd.addAll(synToAdd);
-                w.setSynonyms(oldToAdd.stream().distinct().collect(Collectors.toList())); // distinct, no duplicate
+                oldToAdd.addAll(synAdded);
+                w.setSynonyms(oldToAdd.stream().filter(distinctByKey(SynonymDTO::getSynonymText)).collect(Collectors.toList())); // distinct, no duplicate
             });
         }
 
         ret.setWordDTO(searchResDTO);
         return ret;
+    }
+
+    void getChildren (List<String> selectedSynonym, List<SynonymDTO> syn) {
+        List<Word> children = _repository.findWithTransitiveRule(selectedSynonym);
+        if(children.isEmpty()) return;
+
+        List<SynonymDTO> synToAdd = children.stream().map(entry -> entry.getSynonyms()).flatMap(Collection::stream).collect(Collectors.toList())
+                .stream().map(entry -> new SynonymDTO(entry.getSynonymId(), entry.getSynonymText())).collect(Collectors.toList()); // get synonyms to add and map to DTO
+        syn.addAll(synToAdd);
+        getChildren(synToAdd.stream().map(entity -> entity.getSynonymText().toLowerCase()).collect(Collectors.toList()), syn);
+
     }
 
     /**
@@ -68,7 +84,7 @@ public class SynonymService {
      */
     public ResponseSearchDTO getSearchAdministrationGrid(Integer pageNumber) {
         ResponseSearchDTO ret = new ResponseSearchDTO(); // return this object
-        Pageable paging = PageRequest.of(pageNumber - 1, 1); // this is for paging in query
+        Pageable paging = PageRequest.of(pageNumber - 1, 15); // this is for paging in query
 
         PagerDTO pager = new PagerDTO(); // Create and return this object for paging component in UI
         pager.setCurrentPage(pageNumber);
@@ -280,4 +296,8 @@ public class SynonymService {
         _repositorySynonym.deleteById(id);
     }
 
+    public static <T> Predicate<T> distinctByKey(Function<? super T, ?> keyExtractor) {
+        Set<Object> seen = ConcurrentHashMap.newKeySet();
+        return t -> seen.add(keyExtractor.apply(t));
+    }
 }
